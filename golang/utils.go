@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"reflect"
 	"math/rand"
+	"compress/gzip"
+	"archive/tar"
+	"errors"
 )
 
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -158,4 +161,33 @@ func RandomString(n int) string {
 		b[i] = letters[rand.Intn(len(letters))]
 	}
 	return string(b)
+}
+
+var ErrFileNotFoundInArchive = errors.New("file not found in archive")
+
+func untargzFile(targzData io.Reader, fileName string) ([]byte, error) {
+	gzr, err := gzip.NewReader(targzData)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = gzr.Close() }()
+
+	tr := tar.NewReader(gzr)
+	for {
+		header, err := tr.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil, ErrFileNotFoundInArchive
+			}
+			return nil, err
+		}
+		if header.Typeflag == tar.TypeReg && header.Name == fileName {
+			buff := make([]byte, header.Size)
+			_, err = tr.Read(buff)
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+			return buff, nil
+		}
+	}
 }
